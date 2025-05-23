@@ -22,22 +22,42 @@ class TreeNode:
         self.parent = parent
         self.results = []
         self.param = param
+        self.sc = 0.5
+        self.action = None
+        self.aname = None
     
     # REQUIRED function
     # Called once per iteration
     def step(self, state):
         self.select(state)
+
         
     # REQUIRED function
     # Called after all iterations are done; should return the 
     # best action from among state.get_actions()
     def get_best(self, state):
+
+        amax = None
+        cmax_weight = -1
+        for a in state.get_actions():
+            if a.key() in self.children:
+                c = self.children[a.key()]
+                cweight = c.sc
+                if cweight > cmax_weight:
+                    amax = a
+                    cmax_weight = cweight
+        if amax is not None:
+            return amax
         return random.choice(state.get_actions())
         
     # REQUIRED function (implementation optional, but *very* helpful for debugging)
     # Called after all iterations when the -v command line parameter is present
     def print_tree(self, indent = 0):
-        pass
+        for c in self.children.values():
+            s = "\t" * indent
+            s += c.aname + ": " + str(int(c.sc * 100) / 100) + " " + str(len(c.results))
+            print(s)
+            c.print_tree(indent + 1)
 
 
     # RECOMMENDED: select gets all actions available in the state it is passed
@@ -46,31 +66,72 @@ class TreeNode:
     # Otherwise, pick a child node according to your selection criterion (e.g. UCB-1)
     # apply its action to the state and recursively call select on that child node.
     def select(self, state):
-        pass
+        if state.ended():
+            self.backpropagate(self.score(state))
+            return
+        statecopy = state.copy_undeterministic()
+        available_actions = []
+        actions = statecopy.get_actions()
+        for a in statecopy.get_actions():
+            if a.key() not in self.children:
+                available_actions.append(a)
+        if len(available_actions) > 0:
+            self.expand(statecopy, available_actions)
+            return
+        amax = None
+        cmax = None
+        cmax_weight = -1
+        for a in statecopy.get_actions():
+            c = self.children[a.key()]
+            cweight = c.sc + self.param * math.sqrt(math.log(len(self.results) / len(c.results)))
+            if cweight > cmax_weight:
+                amax = a
+                cmax = c
+                cmax_weight = cweight
+        statecopy.step(amax)
+        cmax.select(statecopy)
+
 
     # RECOMMENDED: expand takes the available actions, and picks one at random,
     # adds a child node corresponding to that action, applies the action ot the state
     # and then calls rollout on that new node
     def expand(self, state, available):
-        pass 
+        statecopy = state.copy_undeterministic()
+        choice = random.choice(available)
+        nn = TreeNode(self.param, self)
+        self.children[choice.key()] = nn
+        nn.action = choice.key()
+        nn.aname = str(choice)
+        statecopy.step(choice)
+        nn.rollout(statecopy)
 
     # RECOMMENDED: rollout plays the game randomly until its conclusion, and then 
     # calls backpropagate with the result you get 
     def rollout(self, state):
-        pass
+        while not state.ended():
+            action = random.choice(state.get_actions())
+            state.step(action)
+        self.backpropagate(self.score(state))
         
     # RECOMMENDED: backpropagate records the score you got in the current node, and 
     # then recursively calls the parent's backpropagate as well.
     # If you record scores in a list, you can use sum(self.results)/len(self.results)
     # to get an average.
     def backpropagate(self, result):
-        pass
+        self.results.append(result)
+        self.sc = sum(self.results)/len(self.results)
+        if self.parent is not None:
+            self.parent.backpropagate(result)
         
     # RECOMMENDED: You can start by just using state.score() as the actual value you are 
     # optimizing; for the challenge scenario, in particular, you may want to experiment
     # with other options (e.g. squaring the score, or incorporating state.health(), etc.)
-    def score(self, state): 
-        return state.score()
+    def score(self, state):
+        if state.ended():
+            if state.get_end_result() == 1:
+                return 1
+            # return 0
+        return (state.score() + state.health()) / 3
         
         
 # You do not have to modify the MCTS Agent (but you can)
